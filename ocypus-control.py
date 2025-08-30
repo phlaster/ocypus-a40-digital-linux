@@ -29,13 +29,10 @@ import psutil
 # --- Constants ---
 VID, PID = 0x1a2c, 0x434d
 REPORT_ID = 0x07
-REPORT_LENGTH = 65
-SLOT_TENS, SLOT_ONES = 5, 6
-DEFAULT_SENSOR_SUBSTR = "k10temp"
-DEFAULT_REFRESH_RATE = 1.0  # seconds
-KEEPALIVE_INTERVAL = 2.0  # seconds
-UNIT_FLAG_CELSIUS = 0x00
-UNIT_FLAG_FAHRENHEIT = 0x01
+REPORT_LENGTH = 64
+DEFAULT_SENSOR_SUBSTR = "coretemp"
+DEFAULT_REFRESH_RATE = 1.0
+KEEPALIVE_INTERVAL = 2.0
 
 
 class OcypusController:
@@ -69,9 +66,6 @@ class OcypusController:
             try:
                 device = hid.device()
                 device.open_path(device_info['path'])
-                # Test if we can send a report
-                test_report = [REPORT_ID] + [0] * (REPORT_LENGTH - 1)
-                device.send_feature_report(test_report)
                 
                 self.device = device
                 self.interface_number = interface_number
@@ -108,24 +102,23 @@ class OcypusController:
         # Convert temperature based on unit
         if unit.lower() == 'f':
             display_temp = temp_celsius * 9/5 + 32
-            unit_flag = UNIT_FLAG_FAHRENHEIT
         else:
             display_temp = temp_celsius
-            unit_flag = UNIT_FLAG_CELSIUS
 
-        # Clamp temperature to displayable range (0-99)
-        display_temp = max(0, min(99, int(round(display_temp))))
-        
-        tens = display_temp // 10
+        display_temp = max(0, min(212, int(round(display_temp))))
+        hundreds = display_temp // 100
+        tens = (display_temp % 100) // 10
         ones = display_temp % 10
 
         try:
             report = [REPORT_ID] + [0] * (REPORT_LENGTH - 1)
-            report[SLOT_TENS] = tens
-            report[SLOT_ONES] = ones
-            report[7] = unit_flag  # Temperature unit flag
+            report[1] = 0xff
+            report[2] = 0xff
+            report[3] = hundreds
+            report[4] = tens
+            report[5] = ones
             
-            self.device.send_feature_report(report)
+            self.device.write(bytes(report))
             return True
         except Exception as e:
             print(f"Error sending temperature: {e}")
@@ -165,7 +158,6 @@ def find_sensor_by_substring(sensors: Dict[str, List[Tuple[str, float]]],
     """Finds the first sensor containing the given substring."""
     for sensor_name, sensor_list in sensors.items():
         if substring.lower() in sensor_name.lower() and sensor_list:
-            # Return the first sensor in the list with its current temperature
             return sensor_name, sensor_list[0].current
     return None
 
